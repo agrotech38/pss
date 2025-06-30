@@ -32,7 +32,7 @@ pre_filled_data = {
         "designation": "Country General Manager & Director",
         "company_name": "Lamberti India Pvt. Ltd.",
         "city_state": "Rajkot, Gujarat",
-        "po_id": "LIPL2024250427",
+        "po_id": "LIPL202526????",
         "custom_message": "Sending you Pre-Shipment sample of Guar Gum Powder Modified."
     },
     "002": {
@@ -40,7 +40,7 @@ pre_filled_data = {
         "designation": "Country General Manager & Director",
         "company_name": "Lamberti India Pvt. Ltd.",
         "city_state": "Rajkot, Gujarat",
-        "po_id": "LIPL2024250383",
+        "po_id": "LIPL2025260115",
         "custom_message": "Sending you Pre-Shipment sample of FARINA GUAR 200 MESH 5000 T/C."
     }
 }
