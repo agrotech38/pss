@@ -137,7 +137,7 @@ if submitted:
 
             st.session_state.docx_bytes = final_bytes
             st.session_state.filename = filename
-            st.success(f"Template used: {template_path} — placeholders replaced.")
+            st.success(f"Template {template_path} is being used")
         except Exception as e:
             st.error(f"Failed to process template: {e}")
 
