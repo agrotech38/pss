@@ -1,8 +1,11 @@
 import streamlit as st
-from fpdf import FPDF
 from datetime import datetime
 import re
 import os
+from io import BytesIO
+from docx import Document
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 
 # Set the page configuration
 st.set_page_config(
@@ -10,9 +13,9 @@ st.set_page_config(
     page_icon="favicon.png"
 )
 
-# Initialize session state for PDF storage
-if "pdf_bytes" not in st.session_state:
-    st.session_state.pdf_bytes = None
+# Initialize session state for DOCX storage
+if "docx_bytes" not in st.session_state:
+    st.session_state.docx_bytes = None
     st.session_state.filename = None
 
 # Hide Streamlit's default UI components
@@ -45,61 +48,132 @@ pre_filled_data = {
     }
 }
 
-# Function to create PDF and return it as bytes
-def create_pdf(date, salutation1, full_name, designation, company_name, city_state, salutation2, po_id, custom_line, item_details, left_margin, letterhead_path=None):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=10)
-    pdf.set_left_margin(left_margin)
-    
-    # Insert letterhead if available
+
+def create_docx(date_str, salutation1, full_name, designation, company_name, city_state,
+                salutation2, po_id, custom_line, item_details, letterhead_path=None, seal_path=None):
+    """
+    Build a .docx Document and return bytes.
+    date_str expected in DD/MM/YYYY format (string).
+    """
+    doc = Document()
+
+    # Optional: insert letterhead image (full-width-ish)
     if letterhead_path and os.path.exists(letterhead_path):
-        pdf.image(letterhead_path, x=0, y=0, w=210)  # A4 width = 210mm
+        try:
+            doc.add_picture(letterhead_path, width=Inches(6.5))
+        except Exception:
+            # ignore image errors (size/format issues)
+            pass
 
-    pdf.ln(50)  # Move cursor down after the header
+    doc.add_paragraph()
 
-    pdf.cell(0, 10, txt="Kindly Att.", ln=False, align='L')
-    pdf.cell(0, 10, txt=f"Date: {date}", ln=True, align='R')
-    pdf.ln(10)
+    # Top line: Kindly Att. and Date aligned on same row using a table
+    table = doc.add_table(rows=1, cols=2)
+    # set some widths (optional; docx may ignore precise widths)
+    try:
+        table.columns[0].width = Inches(4.0)
+        table.columns[1].width = Inches(2.5)
+    except Exception:
+        pass
 
-    pdf.set_font("Arial", style='B', size=10)
-    pdf.cell(200, 5, txt=f"{salutation1} {full_name},", ln=True)
-    pdf.cell(200, 5, txt=f"({designation})", ln=True)
-    pdf.cell(200, 5, txt=company_name + ",", ln=True)
-    pdf.cell(200, 5, txt=city_state, ln=True)
-    pdf.ln(4)
+    left_cell = table.cell(0, 0)
+    right_cell = table.cell(0, 1)
 
-    pdf.set_font("Arial", size=10)
-    pdf.cell(200, 10, txt=f"Dear {salutation2},", ln=True)
-    pdf.ln(2)
-    pdf.cell(200, 10, txt=custom_line, ln=True)
-    pdf.ln(2)
-    pdf.cell(200, 10, txt=f"P.O. ID: {po_id}", ln=True)
-    pdf.ln(2)
+    p_left = left_cell.paragraphs[0]
+    run = p_left.add_run("Kindly Att.")
+    run.font.size = Pt(10)
 
+    p_right = right_cell.paragraphs[0]
+    p_right.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+    run2 = p_right.add_run(f"Date: {date_str}")
+    run2.font.size = Pt(10)
+
+    doc.add_paragraph()
+
+    # Recipient block
+    p = doc.add_paragraph()
+    run = p.add_run(f"{salutation1} {full_name},")
+    run.bold = True
+    run.font.size = Pt(10)
+
+    p = doc.add_paragraph(f"({designation})")
+    p.runs[0].font.size = Pt(10)
+
+    p = doc.add_paragraph(company_name + ",")
+    p.runs[0].font.size = Pt(10)
+
+    p = doc.add_paragraph(city_state)
+    p.runs[0].font.size = Pt(10)
+
+    doc.add_paragraph()
+
+    # Greeting and body
+    p = doc.add_paragraph()
+    r = p.add_run(f"Dear {salutation2},")
+    r.font.size = Pt(10)
+    doc.add_paragraph()
+    doc.add_paragraph(custom_line)
+    doc.add_paragraph(f"P.O. ID: {po_id}")
+    doc.add_paragraph()
+
+    # Items
     for item_label, (code, weight) in item_details.items():
-        pdf.cell(200, 5, txt=f"{item_label}) {code} - {weight:.2f} MT", ln=True)
-    pdf.ln(5)
+        try:
+            weight_str = f"{float(weight):.2f}"
+        except Exception:
+            weight_str = str(weight)
+        doc.add_paragraph(f"{item_label}) {code} - {weight_str} MT")
 
-    pdf.cell(200, 10, txt="Kindly acknowledge receipt of the same.", ln=True)
-    pdf.ln(2)
+    doc.add_paragraph()
+    doc.add_paragraph("Kindly acknowledge receipt of the same.")
+    doc.add_paragraph()
 
-    pdf.set_font("Arial", style='B', size=10)
-    pdf.cell(200, 10, txt="Yours Faithfully,", ln=True)
-    pdf.ln(15)
-    pdf.cell(200, 10, txt="Authorised Signatory", ln=True)
-    pdf.cell(200, 10, txt="Aravally Processed Agrotech Pvt Ltd", ln=True)
+    # Signature block with seal inserted between Yours Faithfully and Authorised Signatory
+    p = doc.add_paragraph()
+    run = p.add_run("Yours Faithfully,")
+    run.bold = True
+    run.font.size = Pt(10)
 
-    # Output PDF to memory
-    return pdf.output(dest='S').encode('latin1')
+    # Small vertical gap before the seal
+    doc.add_paragraph()
+
+    # Insert seal if available (centered)
+    if seal_path and os.path.exists(seal_path):
+        try:
+            p_seal = doc.add_paragraph()
+            p_seal.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            run_seal = p_seal.add_run()
+            # adjust width to taste; default here ~1.5 inches
+            run_seal.add_picture(seal_path, width=Inches(1.5))
+            # Add spacing after seal
+            doc.add_paragraph()
+        except Exception:
+            # ignore image insertion problems
+            pass
+
+    # Continue with signature lines
+    doc.add_paragraph("Authorised Signatory")
+    doc.add_paragraph("Aravally Processed Agrotech Pvt Ltd")
+
+    # Save to bytes
+    bio = BytesIO()
+    doc.save(bio)
+    bio.seek(0)
+    return bio.read()
+
 
 # UI
-st.title("PSS PDF MAKER")
+st.title("PSS DOCX MAKER")
 
-with st.form("pdf_form"):
-    date = st.date_input("Date", value=datetime.today())
+with st.form("docx_form"):
+    # Date handling:
+    date_picker = st.date_input("Pick date (calendar)", value=datetime.today())
+    default_date_str = date_picker.strftime("%d/%m/%Y")
+    date_text = st.text_input("Or edit date (DD/MM/YYYY)", value=default_date_str,
+                              help="Enter date in DD/MM/YYYY. If invalid, the calendar selection will be used.")
+
     salutation1 = st.selectbox("Salutation1", ["Mr.", "Mrs."])
-    user_code = st.text_input("Enter Code to auto-fill details")
+    user_code = st.text_input("Enter Code to auto-fill details (e.g. 001 or 002)")
 
     if user_code in pre_filled_data:
         data = pre_filled_data[user_code]
@@ -118,41 +192,72 @@ with st.form("pdf_form"):
         custom_line = st.text_input("Pre-Shipment Sample Properties:", value="Sending you Pre-Shipment sample of")
 
     salutation2 = st.selectbox("Salutation2", ["Sir", "Ma’am"])
-    total_containers = st.number_input("Total Number of Containers", min_value=1, step=1)
-    current_container = st.number_input("Current Container Number", min_value=1, step=1)
+    total_containers = st.number_input("Total Number of Containers", min_value=1, step=1, value=1)
+    current_container = st.number_input("Current Container Number", min_value=1, step=1, value=1)
 
-    num_items = st.selectbox("Number of items", [1, 2, 3, 4, 5, 6])
+    num_items = st.selectbox("Number of items", [1, 2, 3, 4, 5, 6], index=0)
 
     item_details = {}
     item_labels = ['A', 'B', 'C', 'D', 'E', 'F']
     for i in range(num_items):
         code = st.text_input(f"Item {item_labels[i]} Code")
-        weight = st.number_input(f"Item {item_labels[i]} Weight (MT)", min_value=0.0, step=0.1, value=4.50)
+        weight = st.number_input(f"Item {item_labels[i]} Weight (MT)", min_value=0.0, step=0.1, value=4.50, format="%.2f")
         item_details[item_labels[i]] = (code, weight)
 
-    submitted = st.form_submit_button("Generate PDF")
+    submitted = st.form_submit_button("Generate DOCX")
 
 if submitted:
-    date_str = date.strftime("%d/%m/%Y")
-    left_margin = 25.0
-    letterhead_path = "letterhead.png"  # <-- YOUR letterhead file here
+    # Try to parse the user-edited date_text in DD/MM/YYYY. If parsing fails, fall back to date_picker.
+    date_str_final = None
+    date_text = date_text.strip()
+    date_match = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", date_text)
+    if date_match:
+        d, m, y = date_match.groups()
+        try:
+            dt = datetime(int(y), int(m), int(d))
+            date_str_final = dt.strftime("%d/%m/%Y")
+        except ValueError:
+            date_str_final = None
+
+    if not date_str_final:
+        date_str_final = date_picker.strftime("%d/%m/%Y")
+
+    # Provide paths for letterhead and seal (adjust filenames if different)
+    letterhead_path = "letterhead.png"  # optional; will be used only if exists
+    # If you saved the seal at /mnt/data/APAPL SEAL.png in this environment, try that path first,
+    # otherwise fallback to a local file name.
+    seal_candidates = [
+        "/mnt/data/APAPL SEAL.png",
+        "APAPL SEAL.png",
+        "APAPL_SEAL.png",
+        "seal.png"
+    ]
+    seal_path = None
+    for candidate in seal_candidates:
+        if os.path.exists(candidate):
+            seal_path = candidate
+            break
 
     # File naming
     suffix = "MOD" if user_code == "001" else "FAR" if user_code == "002" else "GEN"
-    safe_po_id = re.sub(r'[\/:*?"<>|]', '', po_id)
+    safe_po_id = re.sub(r'[\/:*?"<>|]', '', po_id or "")
     po_suffix = safe_po_id[-3:] if len(safe_po_id) >= 3 else "000"
-    filename = f"PSS LIPL {suffix} {po_suffix} {int(current_container)} of {int(total_containers)}.pdf"
+    filename = f"PSS LIPL {suffix} {po_suffix} {int(current_container)} of {int(total_containers)}.docx"
 
-    # Create PDF and store in session
-    pdf_bytes = create_pdf(date_str, salutation1, full_name, designation, company_name, city_state, salutation2, po_id, custom_line, item_details, left_margin, letterhead_path)
-    st.session_state.pdf_bytes = pdf_bytes
+    # Create DOCX and store in session
+    docx_bytes = create_docx(date_str_final, salutation1, full_name, designation, company_name,
+                             city_state, salutation2, po_id, custom_line, item_details,
+                             letterhead_path if os.path.exists(letterhead_path) else None,
+                             seal_path)
+
+    st.session_state.docx_bytes = docx_bytes
     st.session_state.filename = filename
 
-# Always show download button if PDF is ready
-if st.session_state.pdf_bytes:
+# Always show download button if DOCX is ready
+if st.session_state.docx_bytes:
     st.download_button(
-        "Download PDF",
-        st.session_state.pdf_bytes,
+        "Download DOCX",
+        st.session_state.docx_bytes,
         file_name=st.session_state.filename,
-        mime="application/pdf"
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
