@@ -4,15 +4,23 @@ import re
 import os
 from io import BytesIO
 from docx import Document
-from docx.shared import Pt
-import requests
 
-# ----------------- Utility: replacement helpers -----------------
-def replace_text_in_paragraph(paragraph, mapping):
-    for run in paragraph.runs:
-        for key, val in mapping.items():
-            if key in run.text:
-                run.text = run.text.replace(key, val)
+# ----------------- Utility: robust replacement helpers -----------------
+def replace_in_paragraph_by_text(paragraph, mapping):
+    """
+    Replace tokens in a paragraph by working with the full paragraph.text.
+    This is simpler and more robust against runs being split; it will
+    replace the whole paragraph text (may lose per-run styling inside the paragraph).
+    """
+    text = paragraph.text
+    new_text = text
+    for key, val in mapping.items():
+        if key in new_text:
+            new_text = new_text.replace(key, val)
+    if new_text != text:
+        # clear existing runs and add a single run with new_text
+        paragraph.clear()  # Documented: python-docx 0.8.11 - clear paragraphs by deleting runs (we use available API)
+        paragraph.add_run(new_text)
 
 def replace_text_in_table(table, mapping):
     for row in table.rows:
@@ -20,13 +28,16 @@ def replace_text_in_table(table, mapping):
             replace_text_in_block(cell, mapping)
 
 def replace_text_in_block(block, mapping):
+    # block may be Document, _Cell, Header, Footer, etc.
     for paragraph in block.paragraphs:
-        replace_text_in_paragraph(paragraph, mapping)
+        replace_in_paragraph_by_text(paragraph, mapping)
     for table in getattr(block, "tables", []):
         replace_text_in_table(table, mapping)
 
 def apply_replacements(doc, mapping):
+    # main body
     replace_text_in_block(doc)
+    # headers/footers
     for section in doc.sections:
         try:
             replace_text_in_block(section.header, mapping)
@@ -37,7 +48,7 @@ def apply_replacements(doc, mapping):
         except Exception:
             pass
 
-# ----------------- Template selection / fetching -----------------
+# ----------------- Template lookup -----------------
 def find_local_template_for_code(code):
     code = (code or "").strip()
     candidates = []
@@ -52,27 +63,7 @@ def find_local_template_for_code(code):
             return c
     return None
 
-def download_template_from_url(url):
-    try:
-        resp = requests.get(url, timeout=20)
-        resp.raise_for_status()
-        return resp.content
-    except Exception:
-        return None
-
-def load_docx_from_bytes(bts):
-    bio = BytesIO(bts)
-    return Document(bio)
-
 # ----------------- Create filled docx -----------------
-def create_docx_from_template_bytes(template_bytes, mapping):
-    doc = load_docx_from_bytes(template_bytes)
-    apply_replacements(doc, mapping)
-    out = BytesIO()
-    doc.save(out)
-    out.seek(0)
-    return out.read()
-
 def create_docx_from_template_file(path, mapping):
     doc = Document(path)
     apply_replacements(doc, mapping)
@@ -81,125 +72,36 @@ def create_docx_from_template_file(path, mapping):
     out.seek(0)
     return out.read()
 
-# ----------------- Fallback: create docx from scratch (if template missing) ----------
-def create_docx_fallback(date_str, salutation1, full_name, designation, company_name, city_state,
-                         salutation2, po_id, custom_line):
+# ----------------- Streamlit UI (minimal) -----------------
+st.set_page_config(page_title="PSS Template Filler (placeholders only)")
+
+st.title("PSS Template Filler — placeholders only")
+
+st.markdown(
     """
-    Fallback creation — used if template for a given code is not found.
-    No images are used per your request.
+    Place your DOCX templates next to this app or in `/mnt/data/`:
+    - `MOD PSS.docx` (for code `001`)
+    - `FAR PSS.docx` (for code `002`)
+    
+    The app will only replace placeholders inside those templates:
+    - Date: `{{DD/MM/YYYY}}` or `DD/MM/YYYY`
+    - P.O. ID: `{{PO012}}`, `PO012`, `{{PO_ID}}`, `PO_ID`
+    - Batches: `{{B1}}` / `B1`, ... `{{B4}}` / `B4`
     """
-    doc = Document()
+)
 
-    # Top line: Kindly Att. and Date using a simple paragraph layout
-    p = doc.add_paragraph()
-    run = p.add_run("Kindly Att.")
-    run.font.size = Pt(10)
-
-    p_date = doc.add_paragraph()
-    run_date = p_date.add_run(f"Date: {date_str}")
-    run_date.font.size = Pt(10)
-
-    doc.add_paragraph()
-
-    # Recipient block - using add_run safely (no runs[0] indexing)
-    p = doc.add_paragraph()
-    run = p.add_run(f"{salutation1} {full_name},")
-    run.bold = True
-    run.font.size = Pt(10)
-
-    p = doc.add_paragraph()
-    run = p.add_run(f"({designation})")
-    run.font.size = Pt(10)
-
-    p = doc.add_paragraph()
-    run = p.add_run(company_name + ",")
-    run.font.size = Pt(10)
-
-    p = doc.add_paragraph()
-    run = p.add_run(city_state)
-    run.font.size = Pt(10)
-
-    doc.add_paragraph()
-
-    p = doc.add_paragraph()
-    run = p.add_run(f"Dear {salutation2},")
-    run.font.size = Pt(10)
-
-    doc.add_paragraph()
-    p = doc.add_paragraph()
-    run = p.add_run(custom_line)
-    run.font.size = Pt(10)
-
-    p = doc.add_paragraph()
-    run = p.add_run(f"P.O. ID: {po_id}")
-    run.font.size = Pt(10)
-
-    doc.add_paragraph()
-
-    # Placeholder list (B1..B4) left blank here (template should supply them)
-    for idx, label in enumerate(["A", "B", "C", "D"], start=1):
-        p = doc.add_paragraph()
-        run = p.add_run(f"{label}) ")
-        run.font.size = Pt(10)
-
-    doc.add_paragraph()
-    p = doc.add_paragraph()
-    run = p.add_run("Kindly acknowledge receipt of the same.")
-    run.font.size = Pt(10)
-
-    doc.add_paragraph()
-
-    p = doc.add_paragraph()
-    run = p.add_run("Yours Faithfully,")
-    run.bold = True
-    run.font.size = Pt(10)
-
-    doc.add_paragraph()
-    p = doc.add_paragraph()
-    run = p.add_run("Authorised Signatory")
-    run.font.size = Pt(10)
-
-    p = doc.add_paragraph()
-    run = p.add_run("Aravally Processed Agrotech Pvt Ltd")
-    run.font.size = Pt(10)
-
-    bio = BytesIO()
-    doc.save(bio)
-    bio.seek(0)
-    return bio.read()
-
-# ----------------- Streamlit UI -----------------
-st.set_page_config(page_title="PSS Template Filler (DOCX only)")
-
-st.title("PSS Template Filler — DOCX only (no images)")
-
-# session storage
 if "docx_bytes" not in st.session_state:
     st.session_state.docx_bytes = None
     st.session_state.filename = None
 
-st.markdown("Provide code (001 or 002). If templates are hosted on GitHub, optionally paste the raw template URL(s).")
-
 with st.form("form"):
     date_picker = st.date_input("Pick date (calendar)", value=datetime.today())
 
-    salutation1 = st.selectbox("Salutation1", ["Mr.", "Mrs."])
-    user_code = st.text_input("Template Code (e.g. 001 or 002)", value="001").strip()
-
-    st.info("If your templates are stored in a GitHub repo, paste the raw file URL below (optional).")
-    url_mod = st.text_input("MOD PSS.docx raw URL (for code 001)", value="")
-    url_far = st.text_input("FAR PSS.docx raw URL (for code 002)", value="")
-
-    full_name = st.text_input("Full Name", value="Mahendra Tripathi")
-    designation = st.text_input("Designation", value="Country General Manager & Director")
-    company_name = st.text_input("Company Name", value="Lamberti India Pvt. Ltd.")
-    city_state = st.text_input("City, State", value="Rajkot, Gujarat")
+    user_code = st.text_input("Template Code (enter 001 or 002)", value="001").strip()
 
     po_id = st.text_input("P.O. ID (will replace PO012)", value="PO012")
-    custom_line = st.text_input("Pre-Shipment Sample Properties", value="Sending you Pre-Shipment sample of Guar Gum Powder Modified.")
-    salutation2 = st.selectbox("Salutation2", ["Sir", "Ma’am"])
 
-    st.markdown("Batch placeholders (B1..B4). Leave blank if not needed.")
+    st.markdown("Batch placeholders (B1..B4). Leave blank if not required.")
     b1 = st.text_input("B1", value="")
     b2 = st.text_input("B2", value="")
     b3 = st.text_input("B3", value="")
@@ -208,35 +110,22 @@ with st.form("form"):
     total_containers = st.number_input("Total Number of Containers", min_value=1, step=1, value=1)
     current_container = st.number_input("Current Container Number", min_value=1, step=1, value=1)
 
-    submitted = st.form_submit_button("Generate DOCX")
+    submitted = st.form_submit_button("Generate filled DOCX")
 
 if submitted:
+    # Format date as DD/MM/YYYY
     date_str_final = date_picker.strftime("%d/%m/%Y")
 
+    # Prepare mapping dictionary (common variants)
     mapping = {}
     mapping["{{DD/MM/YYYY}}"] = date_str_final
     mapping["DD/MM/YYYY"] = date_str_final
 
     po_value = po_id.strip() if po_id and po_id.strip() else "PO012"
-    mapping["{{PO012}}"] = po_value
-    mapping["PO012"] = po_value
-    mapping["{{P.O. ID}}"] = po_value
-    mapping["{{PO_ID}}"] = po_value
-    mapping["PO_ID"] = po_value
+    for key in ["{{PO012}}", "PO012", "{{PO_ID}}", "PO_ID", "{{P.O. ID}}", "P.O. ID"]:
+        mapping[key] = po_value
 
-    mapping["{{FULL_NAME}}"] = full_name
-    mapping["FULL_NAME"] = full_name
-    mapping["{{DESIGNATION}}"] = designation
-    mapping["DESIGNATION"] = designation
-    mapping["{{COMPANY_NAME}}"] = company_name
-    mapping["COMPANY_NAME"] = company_name
-    mapping["{{CITY_STATE}}"] = city_state
-    mapping["CITY_STATE"] = city_state
-    mapping["{{CUSTOM_LINE}}"] = custom_line
-    mapping["CUSTOM_LINE"] = custom_line
-    mapping["{{SALUTATION2}}"] = salutation2
-    mapping["SALUTATION2"] = salutation2
-
+    # B1..B4 mappings
     mapping["{{B1}}"] = b1
     mapping["B1"] = b1
     mapping["{{B2}}"] = b2
@@ -246,57 +135,29 @@ if submitted:
     mapping["{{B4}}"] = b4
     mapping["B4"] = b4
 
+    # Find template locally
     template_path = find_local_template_for_code(user_code)
 
-    final_bytes = None
-    used_template_info = ""
-    if template_path:
+    if not template_path:
+        st.error(
+            "Template for this code not found. Place the appropriate template next to the app or in /mnt/data/.\n"
+            "Expected filenames: 'MOD PSS.docx' (for code 001) or 'FAR PSS.docx' (for code 002)."
+        )
+    else:
         try:
             final_bytes = create_docx_from_template_file(template_path, mapping)
-            used_template_info = f"Local template used: {template_path}"
+
+            # filename
+            suffix = "MOD" if user_code == "001" else "FAR" if user_code == "002" else "GEN"
+            safe_po = re.sub(r'[\/:*?"<>|]', '', po_value)
+            po_suffix = safe_po[-3:] if len(safe_po) >= 3 else "000"
+            filename = f"PSS LIPL {suffix} {po_suffix} {int(current_container)} of {int(total_containers)}.docx"
+
+            st.session_state.docx_bytes = final_bytes
+            st.session_state.filename = filename
+            st.success(f"Template used: {template_path} — placeholders replaced.")
         except Exception as e:
-            st.error(f"Error applying replacements to local template: {e}")
-            final_bytes = None
-            used_template_info = "Local template failed"
-    else:
-        url_candidate = None
-        if user_code == "001" and url_mod.strip():
-            url_candidate = url_mod.strip()
-        elif user_code == "002" and url_far.strip():
-            url_candidate = url_far.strip()
-
-        if url_candidate:
-            bts = download_template_from_url(url_candidate)
-            if bts:
-                try:
-                    final_bytes = create_docx_from_template_bytes(bts, mapping)
-                    used_template_info = f"Downloaded template used from URL: {url_candidate}"
-                except Exception as e:
-                    st.error(f"Error applying replacements to downloaded template: {e}")
-                    final_bytes = None
-                    used_template_info = "Downloaded template failed"
-            else:
-                final_bytes = None
-                used_template_info = f"Failed to download template from URL: {url_candidate}"
-        else:
-            final_bytes = None
-            used_template_info = "No template found locally or URL provided"
-
-    if not final_bytes:
-        # Generate fallback docx (no images) so the user still gets a result
-        st.warning("Template for this code not found — generating fallback DOCX.")
-        final_bytes = create_docx_fallback(date_str_final, salutation1, full_name, designation,
-                                           company_name, city_state, salutation2, po_value, custom_line)
-        used_template_info = "Fallback document generated"
-
-    suffix = "MOD" if user_code == "001" else "FAR" if user_code == "002" else "GEN"
-    safe_po = re.sub(r'[\/:*?"<>|]', '', po_value)
-    po_suffix = safe_po[-3:] if len(safe_po) >= 3 else "000"
-    filename = f"PSS LIPL {suffix} {po_suffix} {int(current_container)} of {int(total_containers)}.docx"
-
-    st.session_state.docx_bytes = final_bytes
-    st.session_state.filename = filename
-    st.success(used_template_info)
+            st.error(f"Failed to process template: {e}")
 
 if st.session_state.get("docx_bytes"):
     st.download_button(
