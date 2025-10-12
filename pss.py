@@ -81,13 +81,11 @@ if "docx_bytes" not in st.session_state:
     st.session_state.filename = None
 
 with st.form("form"):
-    date_picker = st.date_input("Pick date (calendar)", value=datetime.today())
+    date_picker = st.date_input("Calendar Date", value=datetime.today())
 
-    user_code = st.text_input("Template Code (enter 001 or 002)", value="001").strip()
+    user_code = st.text_input("Enter the Code", value="001").strip()
 
-    po_id = st.text_input("P.O. ID (will replace PO012)", value="PO012")
-
-    st.markdown("Batch placeholders (B1..B4). Leave blank if not required.")
+    po_id = st.text_input("P.O. ID", value="PO0124564654")
     b1 = st.text_input("B1", value="")
     b2 = st.text_input("B2", value="")
     b3 = st.text_input("B3", value="")
@@ -96,7 +94,7 @@ with st.form("form"):
     total_containers = st.number_input("Total Number of Containers", min_value=1, step=1, value=1)
     current_container = st.number_input("Current Container Number", min_value=1, step=1, value=1)
 
-    submitted = st.form_submit_button("Generate filled DOCX")
+    submitted = st.form_submit_button("Generate DOCX")
 
 if submitted:
     # Format date as DD/MM/YYYY
@@ -145,7 +143,7 @@ if submitted:
 
 if st.session_state.get("docx_bytes"):
     st.download_button(
-        "Download filled DOCX",
+        "Download DOCX",
         st.session_state.docx_bytes,
         file_name=st.session_state.filename,
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
