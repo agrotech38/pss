@@ -85,7 +85,7 @@ with st.form("form"):
 
     user_code = st.text_input("Enter the Code", value="001").strip()
 
-    po_id = st.text_input("P.O. ID", value="PO0124564654")
+    po_id = st.text_input("P.O. ID", value="LIPL202526")
     b1 = st.text_input("B1", value="")
     b2 = st.text_input("B2", value="")
     b3 = st.text_input("B3", value="")
@@ -94,7 +94,7 @@ with st.form("form"):
     total_containers = st.number_input("Total Number of Containers", min_value=1, step=1, value=1)
     current_container = st.number_input("Current Container Number", min_value=1, step=1, value=1)
 
-    submitted = st.form_submit_button("Generate DOCX")
+    submitted = st.form_submit_button("Generate")
 
 if submitted:
     # Format date as DD/MM/YYYY
@@ -133,7 +133,7 @@ if submitted:
             suffix = "MOD" if user_code == "001" else "FAR" if user_code == "002" else "GEN"
             safe_po = re.sub(r'[\/:*?"<>|]', '', po_value)
             po_suffix = safe_po[-3:] if len(safe_po) >= 3 else "000"
-            filename = f"PSS LIPL {suffix} {po_suffix} {int(current_container)} of {int(total_containers)}.docx"
+            filename = f"PSS {suffix} LIPL {po_suffix} {int(current_container)} of {int(total_containers)}.docx"
 
             st.session_state.docx_bytes = final_bytes
             st.session_state.filename = filename
@@ -143,7 +143,7 @@ if submitted:
 
 if st.session_state.get("docx_bytes"):
     st.download_button(
-        "Download DOCX",
+        "Download",
         st.session_state.docx_bytes,
         file_name=st.session_state.filename,
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
