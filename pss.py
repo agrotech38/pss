@@ -5,12 +5,11 @@ import os
 from io import BytesIO
 from docx import Document
 
-# ----------------- Utility: robust replacement helpers -----------------
+# ----------------- Replacement helpers -----------------
 def replace_in_paragraph_by_text(paragraph, mapping):
     """
-    Replace tokens in a paragraph by working with the full paragraph.text.
-    This is simpler and more robust against runs being split; it will
-    replace the whole paragraph text (may lose per-run styling inside the paragraph).
+    Replace tokens by working with the full paragraph text.
+    This handles tokens split across runs because it rewrites the whole paragraph text.
     """
     text = paragraph.text
     new_text = text
@@ -18,9 +17,8 @@ def replace_in_paragraph_by_text(paragraph, mapping):
         if key in new_text:
             new_text = new_text.replace(key, val)
     if new_text != text:
-        # clear existing runs and add a single run with new_text
-        paragraph.clear()  # Documented: python-docx 0.8.11 - clear paragraphs by deleting runs (we use available API)
-        paragraph.add_run(new_text)
+        # assign new text (this replaces runs)
+        paragraph.text = new_text
 
 def replace_text_in_table(table, mapping):
     for row in table.rows:
@@ -28,15 +26,17 @@ def replace_text_in_table(table, mapping):
             replace_text_in_block(cell, mapping)
 
 def replace_text_in_block(block, mapping):
-    # block may be Document, _Cell, Header, Footer, etc.
-    for paragraph in block.paragraphs:
+    """
+    Replace tokens in a Document, Header, Footer, or _Cell block.
+    """
+    for paragraph in getattr(block, "paragraphs", []):
         replace_in_paragraph_by_text(paragraph, mapping)
     for table in getattr(block, "tables", []):
         replace_text_in_table(table, mapping)
 
 def apply_replacements(doc, mapping):
-    # main body
-    replace_text_in_block(doc)
+    # body
+    replace_text_in_block(doc, mapping)
     # headers/footers
     for section in doc.sections:
         try:
@@ -51,7 +51,6 @@ def apply_replacements(doc, mapping):
 # ----------------- Template lookup -----------------
 def find_local_template_for_code(code):
     code = (code or "").strip()
-    candidates = []
     if code == "001":
         candidates = ["MOD PSS.docx", "/mnt/data/MOD PSS.docx", "templates/MOD PSS.docx"]
     elif code == "002":
@@ -72,10 +71,10 @@ def create_docx_from_template_file(path, mapping):
     out.seek(0)
     return out.read()
 
-# ----------------- Streamlit UI (minimal) -----------------
+# ----------------- Streamlit UI -----------------
 st.set_page_config(page_title="PSS Template Filler (placeholders only)")
 
-st.title("PSS Template Filler — placeholders only")
+st.title("PSS Template Filler — placeholders only (no images)")
 
 st.markdown(
     """
@@ -90,6 +89,7 @@ st.markdown(
     """
 )
 
+# session storage
 if "docx_bytes" not in st.session_state:
     st.session_state.docx_bytes = None
     st.session_state.filename = None
@@ -116,7 +116,7 @@ if submitted:
     # Format date as DD/MM/YYYY
     date_str_final = date_picker.strftime("%d/%m/%Y")
 
-    # Prepare mapping dictionary (common variants)
+    # Build mapping
     mapping = {}
     mapping["{{DD/MM/YYYY}}"] = date_str_final
     mapping["DD/MM/YYYY"] = date_str_final
@@ -125,7 +125,6 @@ if submitted:
     for key in ["{{PO012}}", "PO012", "{{PO_ID}}", "PO_ID", "{{P.O. ID}}", "P.O. ID"]:
         mapping[key] = po_value
 
-    # B1..B4 mappings
     mapping["{{B1}}"] = b1
     mapping["B1"] = b1
     mapping["{{B2}}"] = b2
@@ -135,7 +134,6 @@ if submitted:
     mapping["{{B4}}"] = b4
     mapping["B4"] = b4
 
-    # Find template locally
     template_path = find_local_template_for_code(user_code)
 
     if not template_path:
