@@ -3,3 +3,4 @@ fpdf
 pdf2image
 Pillow
 poppler-utils
+python-docx
