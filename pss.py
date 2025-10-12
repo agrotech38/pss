@@ -123,7 +123,7 @@ if submitted:
     if not template_path:
         st.error(
             "Template for this code not found. Place the appropriate template next to the app or in /mnt/data/.\n"
-            "Expected filenames: 'MOD PSS.docx' (for code 001) or 'FAR PSS.docx' (for code 002)."
+            "Use Appropriate Code"
         )
     else:
         try:
