@@ -53,9 +53,6 @@ def find_local_template_for_code(code):
     return None
 
 def download_template_from_url(url):
-    """
-    Download a raw .docx from a given URL and return bytes, or None on failure.
-    """
     try:
         resp = requests.get(url, timeout=20)
         resp.raise_for_status()
@@ -84,6 +81,93 @@ def create_docx_from_template_file(path, mapping):
     out.seek(0)
     return out.read()
 
+# ----------------- Fallback: create docx from scratch (if template missing) ----------
+def create_docx_fallback(date_str, salutation1, full_name, designation, company_name, city_state,
+                         salutation2, po_id, custom_line):
+    """
+    Fallback creation — used if template for a given code is not found.
+    No images are used per your request.
+    """
+    doc = Document()
+
+    # Top line: Kindly Att. and Date using a simple paragraph layout
+    p = doc.add_paragraph()
+    run = p.add_run("Kindly Att.")
+    run.font.size = Pt(10)
+
+    p_date = doc.add_paragraph()
+    run_date = p_date.add_run(f"Date: {date_str}")
+    run_date.font.size = Pt(10)
+
+    doc.add_paragraph()
+
+    # Recipient block - using add_run safely (no runs[0] indexing)
+    p = doc.add_paragraph()
+    run = p.add_run(f"{salutation1} {full_name},")
+    run.bold = True
+    run.font.size = Pt(10)
+
+    p = doc.add_paragraph()
+    run = p.add_run(f"({designation})")
+    run.font.size = Pt(10)
+
+    p = doc.add_paragraph()
+    run = p.add_run(company_name + ",")
+    run.font.size = Pt(10)
+
+    p = doc.add_paragraph()
+    run = p.add_run(city_state)
+    run.font.size = Pt(10)
+
+    doc.add_paragraph()
+
+    p = doc.add_paragraph()
+    run = p.add_run(f"Dear {salutation2},")
+    run.font.size = Pt(10)
+
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    run = p.add_run(custom_line)
+    run.font.size = Pt(10)
+
+    p = doc.add_paragraph()
+    run = p.add_run(f"P.O. ID: {po_id}")
+    run.font.size = Pt(10)
+
+    doc.add_paragraph()
+
+    # Placeholder list (B1..B4) left blank here (template should supply them)
+    for idx, label in enumerate(["A", "B", "C", "D"], start=1):
+        p = doc.add_paragraph()
+        run = p.add_run(f"{label}) ")
+        run.font.size = Pt(10)
+
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    run = p.add_run("Kindly acknowledge receipt of the same.")
+    run.font.size = Pt(10)
+
+    doc.add_paragraph()
+
+    p = doc.add_paragraph()
+    run = p.add_run("Yours Faithfully,")
+    run.bold = True
+    run.font.size = Pt(10)
+
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    run = p.add_run("Authorised Signatory")
+    run.font.size = Pt(10)
+
+    p = doc.add_paragraph()
+    run = p.add_run("Aravally Processed Agrotech Pvt Ltd")
+    run.font.size = Pt(10)
+
+    bio = BytesIO()
+    doc.save(bio)
+    bio.seek(0)
+    return bio.read()
+
 # ----------------- Streamlit UI -----------------
 st.set_page_config(page_title="PSS Template Filler (DOCX only)")
 
@@ -102,12 +186,10 @@ with st.form("form"):
     salutation1 = st.selectbox("Salutation1", ["Mr.", "Mrs."])
     user_code = st.text_input("Template Code (e.g. 001 or 002)", value="001").strip()
 
-    # Optional: input raw URLs for templates (GitHub raw links). Leave blank to use local files.
-    st.info("If your templates are stored in a GitHub repo, paste the raw file URL below (optional). Example raw URL: https://raw.githubusercontent.com/username/repo/branch/path/MOD%20PSS.docx")
+    st.info("If your templates are stored in a GitHub repo, paste the raw file URL below (optional).")
     url_mod = st.text_input("MOD PSS.docx raw URL (for code 001)", value="")
     url_far = st.text_input("FAR PSS.docx raw URL (for code 002)", value="")
 
-    # User details to place into template placeholders
     full_name = st.text_input("Full Name", value="Mahendra Tripathi")
     designation = st.text_input("Designation", value="Country General Manager & Director")
     company_name = st.text_input("Company Name", value="Lamberti India Pvt. Ltd.")
@@ -117,7 +199,6 @@ with st.form("form"):
     custom_line = st.text_input("Pre-Shipment Sample Properties", value="Sending you Pre-Shipment sample of Guar Gum Powder Modified.")
     salutation2 = st.selectbox("Salutation2", ["Sir", "Ma’am"])
 
-    # B1..B4 placeholders (left empty by default)
     st.markdown("Batch placeholders (B1..B4). Leave blank if not needed.")
     b1 = st.text_input("B1", value="")
     b2 = st.text_input("B2", value="")
@@ -130,10 +211,8 @@ with st.form("form"):
     submitted = st.form_submit_button("Generate DOCX")
 
 if submitted:
-    # format date
     date_str_final = date_picker.strftime("%d/%m/%Y")
 
-    # Prepare mapping of common placeholder variants to values
     mapping = {}
     mapping["{{DD/MM/YYYY}}"] = date_str_final
     mapping["DD/MM/YYYY"] = date_str_final
@@ -142,11 +221,9 @@ if submitted:
     mapping["{{PO012}}"] = po_value
     mapping["PO012"] = po_value
     mapping["{{P.O. ID}}"] = po_value
-    mapping["{{P.O. ID:}}"] = po_value
     mapping["{{PO_ID}}"] = po_value
     mapping["PO_ID"] = po_value
 
-    # Basic personal details (in case template uses them)
     mapping["{{FULL_NAME}}"] = full_name
     mapping["FULL_NAME"] = full_name
     mapping["{{DESIGNATION}}"] = designation
@@ -160,7 +237,6 @@ if submitted:
     mapping["{{SALUTATION2}}"] = salutation2
     mapping["SALUTATION2"] = salutation2
 
-    # B1..B4
     mapping["{{B1}}"] = b1
     mapping["B1"] = b1
     mapping["{{B2}}"] = b2
@@ -170,11 +246,10 @@ if submitted:
     mapping["{{B4}}"] = b4
     mapping["B4"] = b4
 
-    # find local template first
     template_path = find_local_template_for_code(user_code)
 
-    # If not found and user provided URL, download from appropriate URL
-    template_bytes = None
+    final_bytes = None
+    used_template_info = ""
     if template_path:
         try:
             final_bytes = create_docx_from_template_file(template_path, mapping)
@@ -184,7 +259,6 @@ if submitted:
             final_bytes = None
             used_template_info = "Local template failed"
     else:
-        # Try to download from provided URLs
         url_candidate = None
         if user_code == "001" and url_mod.strip():
             url_candidate = url_mod.strip()
@@ -208,19 +282,21 @@ if submitted:
             final_bytes = None
             used_template_info = "No template found locally or URL provided"
 
-    # If we still don't have final_bytes, inform user and do not create images or fallback heavy doc.
     if not final_bytes:
-        st.error(f"Could not locate or process a template. {used_template_info}. Place 'MOD PSS.docx' or 'FAR PSS.docx' next to app.py or provide a raw GitHub URL.")
-    else:
-        # compute output filename
-        suffix = "MOD" if user_code == "001" else "FAR" if user_code == "002" else "GEN"
-        safe_po = re.sub(r'[\/:*?"<>|]', '', po_value)
-        po_suffix = safe_po[-3:] if len(safe_po) >= 3 else "000"
-        filename = f"PSS LIPL {suffix} {po_suffix} {int(current_container)} of {int(total_containers)}.docx"
+        # Generate fallback docx (no images) so the user still gets a result
+        st.warning("Template for this code not found — generating fallback DOCX.")
+        final_bytes = create_docx_fallback(date_str_final, salutation1, full_name, designation,
+                                           company_name, city_state, salutation2, po_value, custom_line)
+        used_template_info = "Fallback document generated"
 
-        st.session_state.docx_bytes = final_bytes
-        st.session_state.filename = filename
-        st.success(used_template_info)
+    suffix = "MOD" if user_code == "001" else "FAR" if user_code == "002" else "GEN"
+    safe_po = re.sub(r'[\/:*?"<>|]', '', po_value)
+    po_suffix = safe_po[-3:] if len(safe_po) >= 3 else "000"
+    filename = f"PSS LIPL {suffix} {po_suffix} {int(current_container)} of {int(total_containers)}.docx"
+
+    st.session_state.docx_bytes = final_bytes
+    st.session_state.filename = filename
+    st.success(used_template_info)
 
 if st.session_state.get("docx_bytes"):
     st.download_button(
