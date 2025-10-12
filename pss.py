@@ -72,22 +72,8 @@ def create_docx_from_template_file(path, mapping):
     return out.read()
 
 # ----------------- Streamlit UI -----------------
-st.set_page_config(page_title="PSS Template Filler (placeholders only)")
-
-st.title("PSS Template Filler — placeholders only (no images)")
-
-st.markdown(
-    """
-    Place your DOCX templates next to this app or in `/mnt/data/`:
-    - `MOD PSS.docx` (for code `001`)
-    - `FAR PSS.docx` (for code `002`)
-    
-    The app will only replace placeholders inside those templates:
-    - Date: `{{DD/MM/YYYY}}` or `DD/MM/YYYY`
-    - P.O. ID: `{{PO012}}`, `PO012`, `{{PO_ID}}`, `PO_ID`
-    - Batches: `{{B1}}` / `B1`, ... `{{B4}}` / `B4`
-    """
-)
+st.set_page_config(page_title="PSS Generator")
+st.title("PSS Generator")
 
 # session storage
 if "docx_bytes" not in st.session_state:
