@@ -122,7 +122,7 @@ if submitted:
     mapping["DD/MM/YYYY"] = date_str_final
 
     po_value = po_id.strip() if po_id and po_id.strip() else "PO012"
-    for key in ["{{PO012}}", "PO012", "{{PO_ID}}", "PO_ID", "{{P.O. ID}}", "P.O. ID"]:
+    for key in ["{{PO012}}"]:
         mapping[key] = po_value
 
     mapping["{{B1}}"] = b1
