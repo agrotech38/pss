@@ -83,16 +83,16 @@ if "docx_bytes" not in st.session_state:
 with st.form("form"):
     date_picker = st.date_input("Calendar Date", value=datetime.today())
 
-    user_code = st.text_input("Enter the Code", value="001").strip()
+    user_code = st.text_input("Enter the Code", value="000").strip()
 
     po_id = st.text_input("P.O. ID", value="LIPL202526")
-    b1 = st.text_input("B1", value="")
-    b2 = st.text_input("B2", value="")
-    b3 = st.text_input("B3", value="")
-    b4 = st.text_input("B4", value="")
+    b1 = st.text_input("Batch 1", value="")
+    b2 = st.text_input("Batch 2", value="")
+    b3 = st.text_input("Batch 3", value="")
+    b4 = st.text_input("Batch 4", value="")
 
-    total_containers = st.number_input("Total Number of Containers", min_value=1, step=1, value=1)
-    current_container = st.number_input("Current Container Number", min_value=1, step=1, value=1)
+    total_containers = st.number_input("Total Container", min_value=1, step=1, value=1)
+    current_container = st.number_input("Current Container", min_value=1, step=1, value=1)
 
     submitted = st.form_submit_button("Generate")
 
