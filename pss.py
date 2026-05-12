@@ -85,7 +85,7 @@ with st.form("form"):
 
     user_code = st.text_input("Enter the Code", value="000").strip()
 
-    po_id = st.text_input("P.O. ID", value="LIPL202526")
+    po_id = st.text_input("P.O. ID", value="LIPL2026270")
     b1 = st.text_input("Batch 1", value="")
     b2 = st.text_input("Batch 2", value="")
     b3 = st.text_input("Batch 3", value="")
